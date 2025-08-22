@@ -14,7 +14,7 @@ def connect_server():
     global client_socket, running
     username = name_entry.get().strip()
     if not username:
-        log("[CLIENT] Vui lòng nhập tên.")
+        log("[CLIENT] Vui lòng nhập tên:")
         return
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
