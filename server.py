@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import scrolledtext
 import socket
 import threading
+import mysql.connector
+from datetime import datetime
 
 HOST = '127.0.0.1'
 PORT = 5555
@@ -11,31 +13,71 @@ nicknames = []
 server_socket = None
 running = False
 
+# ------------------ Database ------------------
+def get_db():
+    return mysql.connector.connect(
+        host="localhost",
+        user="root",        # mặc định XAMPP user là root
+        password="",        # mặc định không có password
+        database="chat_app" # tên database bạn đã tạo
+    )
+
+def save_message(sender: str, content: str):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO messages (sender, content, timestamp) VALUES (%s, %s, %s)", 
+        (sender, content, ts)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def load_recent_messages(limit=20):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sender, content, timestamp FROM messages ORDER BY id DESC LIMIT %s", (limit,))
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows[::-1]  # đảo ngược để tin cũ lên trước
+
 # ---------------- SERVER LOGIC ----------------
-def broadcast(message, sender=None):
+def broadcast(message, exclude_client=None):
     for client in clients:
-        try:
-            client.send(message.encode("utf-8"))
-        except:
-            pass
+        if client != exclude_client:
+            try:
+                client.send(message.encode("utf-8"))
+            except:
+                pass
 
 def handle_client(client):
     while running:
         try:
             msg = client.recv(1024).decode("utf-8")
             if msg:
-                idx = clients.index(client)
-                full_msg = f"{nicknames[idx]}: {msg}"
-                log(f"[CHAT] {full_msg}")
-                broadcast(full_msg)
+                if msg.startswith("TYPING|"):
+                    # Broadcast typing state tới các client khác
+                    broadcast(msg, exclude_client=client)
+                else:
+                    idx = clients.index(client)
+                    sender = nicknames[idx]
+                    full_msg = f"{sender}: {msg}"
+                    log(f"[CHAT] {full_msg}")
+                    save_message(sender, msg)  # lưu MySQL
+                    broadcast(full_msg, exclude_client=client)
         except:
-            idx = clients.index(client)
-            client.close()
-            nickname = nicknames[idx]
-            log(f"❌ {nickname} đã ngắt kết nối.")
-            clients.remove(client)
-            nicknames.remove(nickname)
-            update_client_list()
+            # nếu lỗi hoặc client ngắt kết nối
+            if client in clients:
+                idx = clients.index(client)
+                nickname = nicknames[idx]
+                client.close()
+                log(f"❌ {nickname} đã ngắt kết nối.")
+                clients.remove(client)
+                nicknames.remove(nickname)
+                update_client_list()
+                broadcast(f"PRESENCE|{nickname}|offline")
             break
 
 def accept_clients():
@@ -47,10 +89,20 @@ def accept_clients():
             nicknames.append(nickname)
             log(f"✅ {nickname} đã kết nối từ {addr}")
             update_client_list()
-            broadcast(f"🔔 {nickname} đã tham gia phòng chat!")
+
+            # Gửi 20 tin nhắn gần nhất cho client mới
+            for sender, content, ts in load_recent_messages():
+                try:
+                    client.send(f"HISTORY|{sender}|{content}|{ts}".encode("utf-8"))
+                except:
+                    pass
+
+            # Thông báo presence
+            broadcast(f"PRESENCE|{nickname}|online", exclude_client=client)
             threading.Thread(target=handle_client, args=(client,), daemon=True).start()
         except:
             break
+
 # ---------------- GUI CONTROL ----------------
 def start_server():
     global server_socket, running
