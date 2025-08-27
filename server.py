@@ -51,7 +51,6 @@ def accept_clients():
             threading.Thread(target=handle_client, args=(client,), daemon=True).start()
         except:
             break
-
 # ---------------- GUI CONTROL ----------------
 def start_server():
     global server_socket, running

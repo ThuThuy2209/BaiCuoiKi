@@ -88,8 +88,6 @@ def log(message):
 
     chat_box.config(state=tk.DISABLED)
     chat_box.yview(tk.END)
-
-
 # ---------------- GUI ----------------
 root = tk.Tk()
 root.title("Client Chat")
@@ -111,7 +109,6 @@ chat_box = scrolledtext.ScrolledText(root, wrap=tk.WORD, state=tk.DISABLED, widt
 chat_box.pack(padx=5, pady=5)
 chat_box.tag_config("self", foreground="blue")
 chat_box.tag_config("other", foreground="green")
-
 
 frame_bottom = tk.Frame(root)
 frame_bottom.pack(pady=5)
